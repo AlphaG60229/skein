@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'">
 <title>Skein — local Markdown knowledge graph</title>
 <style>
 :root{
@@ -123,6 +123,24 @@ code{font-family:var(--mono);background:var(--chip);color:var(--chip-ink);paddin
 .body h2{font-size:15.5px;margin:12px 0 4px}
 .body h3{font-size:14px;margin:10px 0 4px}
 .body .gap{height:6px}
+.body ol{margin:6px 0;padding-left:24px}
+.body i{color:var(--ink)}
+.body blockquote{margin:10px 0;padding:4px 14px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;color:var(--muted)}
+.body blockquote p{margin:4px 0}
+.md-table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px}
+.md-table th,.md-table td{border:1px solid var(--line);padding:6px 10px}
+.md-table th{background:var(--chip);color:var(--chip-ink);font-weight:700}
+.md-table tbody tr:nth-child(even){background:var(--bg)}
+.md-img{max-width:100%;border-radius:8px;border:1px solid var(--line);display:block;margin:10px 0}
+.md-img.broken-img{padding:14px;background:var(--accent-soft);color:var(--danger);border:1px dashed var(--danger);font-size:12px;min-height:24px}
+pre.codeblock{background:var(--pre-bg);color:var(--pre-ink);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6}
+pre.codeblock code{background:none;color:inherit;padding:0}
+.tok-keyword{color:var(--accent);font-weight:600}
+.tok-string{color:#15803d}
+[data-theme=dark] .tok-string{color:#86efac}
+.tok-comment{color:var(--muted);font-style:italic}
+.tok-number{color:#4338ca}
+[data-theme=dark] .tok-number{color:#a5b4fc}
 pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--pre-bg);color:var(--pre-ink);border:1px solid var(--line);border-radius:8px;padding:12px;font-family:var(--mono);font-size:12px}
 .wikilink{color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:5px;font-weight:600;cursor:pointer}
 .wikilink.broken{color:var(--danger);background:transparent;border:1px dashed var(--danger)}
@@ -457,34 +475,183 @@ function decodeEntities(s){
   return s.replace(/&quot;/g,'"').replace(/&#39;/g,"'")
           .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
 }
-function inlineMd(s){
-  return s
-    .replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>')
-    .replace(/`([^`\n]+)`/g,'<code>$1</code>')
-    .replace(/\[\[([^\]]+)\]\]/g, (m0, id) => {
-      id = id.trim();
-      const exists = !!findNote(decodeEntities(id));
-      return '<a class="wikilink' + (exists ? '' : ' broken') + '" data-id="' + id + '" title="' +
-             (exists ? 'Open note' : 'No note with this id') + '">' + id + '</a>';
-    });
+/* Inline spans: escapes raw text, then applies inline code, bold, italic,
+   images, and wikilinks. Order matters: inline code is protected first so
+   markup characters inside it are never reinterpreted. */
+function inlineMd(raw){
+  let s = esc(raw);
+  const codes = [];
+  s = s.replace(/`([^`\n]+)`/g, (m0, c) => { codes.push(c); return '\u0000C' + (codes.length - 1) + '\u0000'; });
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>');
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,
+    (m0, alt, src) => '<img class="md-img" data-img="' + src + '" alt="' + (alt || 'image') + '" loading="lazy">');
+  s = s.replace(/\[\[([^\]]+)\]\]/g, (m0, id) => {
+    id = id.trim();
+    const exists = !!findNote(decodeEntities(id));
+    return '<a class="wikilink' + (exists ? '' : ' broken') + '" data-id="' + id + '" title="' +
+           (exists ? 'Open note' : 'No note with this id') + '">' + id + '</a>';
+  });
+  s = s.replace(/\u0000C(\d+)\u0000/g, (m0, idx) => '<code>' + esc(codes[Number(idx)]) + '</code>');
+  return s;
 }
-function mdRender(t){
-  const out = []; let inList = false;
-  for (const ln of esc(t || '').split(/\r?\n/)){
-    const li = ln.match(/^\s*-\s+(.+)$/);
-    if (li){ if (!inList){ out.push('<ul>'); inList = true; } out.push('<li>' + inlineMd(li[1]) + '</li>'); continue; }
-    if (inList){ out.push('</ul>'); inList = false; }
-    let m;
-    if ((m = ln.match(/^###\s+(.+)$/))){ out.push('<h3>' + inlineMd(m[1]) + '</h3>'); continue; }
-    if ((m = ln.match(/^##\s+(.+)$/))){ out.push('<h2>' + inlineMd(m[1]) + '</h2>'); continue; }
-    if ((m = ln.match(/^#\s+(.+)$/))){ out.push('<h1>' + inlineMd(m[1]) + '</h1>'); continue; }
-    if (!ln.trim()){ out.push('<div class="gap"></div>'); continue; }
-    out.push('<p>' + inlineMd(ln) + '</p>');
+
+/* Minimal, dependency-free syntax highlighting for fenced code blocks.
+   Tokenizes one line at a time: line comments, quoted strings, numbers,
+   and a small cross-language keyword list. Good enough to aid reading
+   without pulling in a highlighting library. */
+const CODE_KEYWORDS = new Set(['function','const','let','var','if','else','for','while','return',
+  'import','from','export','default','class','def','print','true','false','null','none','True',
+  'False','None','new','this','self','async','await','try','catch','except','finally','switch',
+  'case','break','continue','public','private','static','void','int','string','bool','struct',
+  'interface','type','enum','yield','throw','do','in','of','extends','implements','with']);
+function highlightLine(line){
+  let i = 0, out = ''; const n = line.length;
+  while (i < n){
+    const c = line[i];
+    if ((c === '/' && line[i+1] === '/') || c === '#'){
+      out += '<span class="tok-comment">' + esc(line.slice(i)) + '</span>'; break;
+    }
+    if (c === '"' || c === "'" || c === '`'){
+      let j = i + 1;
+      while (j < n && line[j] !== c){ if (line[j] === '\\') j++; j++; }
+      j = Math.min(j + 1, n);
+      out += '<span class="tok-string">' + esc(line.slice(i, j)) + '</span>'; i = j; continue;
+    }
+    if (/[0-9]/.test(c) && !/[A-Za-z_0-9]/.test(line[i-1] || '')){
+      let j = i; while (j < n && /[0-9.]/.test(line[j])) j++;
+      out += '<span class="tok-number">' + esc(line.slice(i, j)) + '</span>'; i = j; continue;
+    }
+    if (/[A-Za-z_]/.test(c)){
+      let j = i; while (j < n && /[A-Za-z0-9_]/.test(line[j])) j++;
+      const word = line.slice(i, j);
+      out += CODE_KEYWORDS.has(word) ? '<span class="tok-keyword">' + esc(word) + '</span>' : esc(word);
+      i = j; continue;
+    }
+    out += esc(c); i++;
   }
-  if (inList) out.push('</ul>');
-  return '<div class="body">' + out.join('') + '</div>';
+  return out;
 }
+function renderCodeBlock(codeLines, lang){
+  const html = codeLines.map(highlightLine).join('\n');
+  return '<pre class="codeblock"><code' + (lang ? ' class="lang-' + esc(lang) + '"' : '') + '>' + html + '</code></pre>';
+}
+
+/* GFM-style pipe tables: `| a | b |` header, `|---|---|` separator, then rows. */
+function splitTableRow(line){
+  let t = line.trim();
+  if (t.startsWith('|')) t = t.slice(1);
+  if (t.endsWith('|')) t = t.slice(0, -1);
+  return t.split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'));
+}
+function tableAlign(sepCell){
+  const t = sepCell.trim();
+  if (/^:-+:$/.test(t)) return 'center';
+  if (/^-+:$/.test(t)) return 'right';
+  if (/^:-+$/.test(t)) return 'left';
+  return '';
+}
+function renderTable(headers, aligns, rows){
+  let h = '<table class="md-table"><thead><tr>';
+  headers.forEach((c, idx) => h += '<th style="text-align:' + (aligns[idx] || 'left') + '">' + inlineMd(c) + '</th>');
+  h += '</tr></thead><tbody>';
+  for (const r of rows){
+    h += '<tr>';
+    headers.forEach((_, idx) => h += '<td style="text-align:' + (aligns[idx] || 'left') + '">' + inlineMd(r[idx] || '') + '</td>');
+    h += '</tr>';
+  }
+  return h + '</tbody></table>';
+}
+
+/* Block-level parser: fenced code, tables, blockquotes (recursive), headings,
+   ordered/unordered lists, paragraphs. Returns inner HTML (no wrapping div). */
+function mdBlocks(text){
+  const lines = String(text || '').split(/\r?\n/);
+  const out = []; let i = 0; let listType = null;
+  const closeList = () => { if (listType){ out.push('</' + listType + '>'); listType = null; } };
+  while (i < lines.length){
+    const line = lines[i];
+
+    const fence = line.match(/^```(\S*)\s*$/);
+    if (fence){
+      closeList();
+      const lang = fence[1] || ''; const codeLines = []; i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])){ codeLines.push(lines[i]); i++; }
+      i++; // skip closing fence (tolerates a missing one at EOF)
+      out.push(renderCodeBlock(codeLines, lang));
+      continue;
+    }
+
+    if (/^\|.*\|\s*$/.test(line) && lines[i+1] &&
+        /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i+1])){
+      closeList();
+      const headers = splitTableRow(line);
+      const aligns = splitTableRow(lines[i+1]).map(tableAlign);
+      i += 2; const rows = [];
+      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])){ rows.push(splitTableRow(lines[i])); i++; }
+      out.push(renderTable(headers, aligns, rows));
+      continue;
+    }
+
+    if (/^>\s?/.test(line)){
+      closeList();
+      const inner = []; while (i < lines.length && /^>\s?/.test(lines[i])){ inner.push(lines[i].replace(/^>\s?/, '')); i++; }
+      out.push('<blockquote>' + mdBlocks(inner.join('\n')) + '</blockquote>');
+      continue;
+    }
+
+    let m;
+    if ((m = line.match(/^###\s+(.+)$/))){ closeList(); out.push('<h3>' + inlineMd(m[1]) + '</h3>'); i++; continue; }
+    if ((m = line.match(/^##\s+(.+)$/))){ closeList(); out.push('<h2>' + inlineMd(m[1]) + '</h2>'); i++; continue; }
+    if ((m = line.match(/^#\s+(.+)$/))){ closeList(); out.push('<h1>' + inlineMd(m[1]) + '</h1>'); i++; continue; }
+
+    if ((m = line.match(/^\s*\d+\.\s+(.+)$/))){
+      if (listType !== 'ol'){ closeList(); out.push('<ol>'); listType = 'ol'; }
+      out.push('<li>' + inlineMd(m[1]) + '</li>'); i++; continue;
+    }
+    if ((m = line.match(/^\s*[-*]\s+(.+)$/))){
+      if (listType !== 'ul'){ closeList(); out.push('<ul>'); listType = 'ul'; }
+      out.push('<li>' + inlineMd(m[1]) + '</li>'); i++; continue;
+    }
+    closeList();
+
+    if (!line.trim()){ out.push('<div class="gap"></div>'); i++; continue; }
+    out.push('<p>' + inlineMd(line) + '</p>'); i++;
+  }
+  closeList();
+  return out.join('');
+}
+function mdRender(t){ return '<div class="body">' + mdBlocks(t) + '</div>'; }
 function findNote(id){ return files.find(f => f.id === id) || null; }
+
+/* Local images: notes may reference ![alt](relative/path.png) — resolved
+   against notes/ via File System Access and shown as blob: URLs. Nothing
+   is ever fetched over the network; CSP's img-src covers only data: and
+   blob:, so a remote http(s) image URL is silently blocked, by design. */
+let activeImageUrls = [];
+function revokeImages(){ for (const u of activeImageUrls) URL.revokeObjectURL(u); activeImageUrls = []; }
+async function resolveNotesFile(path){
+  const parts = path.split('/').filter(p => p && p !== '.');
+  let dir = notesHandle;
+  for (let i = 0; i < parts.length - 1; i++) dir = await dir.getDirectoryHandle(parts[i]);
+  return dir.getFileHandle(parts[parts.length - 1]);
+}
+async function resolveImages(container){
+  const imgs = container.querySelectorAll('img.md-img[data-img]');
+  for (const img of imgs){
+    const path = img.getAttribute('data-img');
+    try {
+      const fh = await resolveNotesFile(path);
+      const file = await fh.getFile();
+      const url = URL.createObjectURL(file);
+      activeImageUrls.push(url);
+      img.src = url;
+    } catch (e){
+      img.classList.add('broken-img');
+      img.alt = (img.getAttribute('alt') || 'image') + ' — not found: ' + path;
+    }
+  }
+}
 
 /* ---------- graph: world / view ---------- */
 const svg = $('graph'), wrap = $('graphWrap');
@@ -849,6 +1016,7 @@ function viewNote(id){
     ? back.map(b => '<a class="wikilink" data-id="' + esc(b.id) + '">' + esc(b.title) + '</a> ').join('')
     : '<span class="filepath">No other note links here yet.</span>';
   backHtml += '</div>';
+  revokeImages();
   $('content').innerHTML =
     '<span class="badge" style="background:' + typeColor(f.type) + '22;color:' + typeColor(f.type) + '">' + esc(f.type) + '</span>' +
     '<span class="badge">' + esc(f.status) + '</span>' +
@@ -857,6 +1025,7 @@ function viewNote(id){
     '<div class="section-title">Frontmatter</div><table>' + rows + '</table>' +
     '<div class="section-title">Body</div>' + mdRender(f.body) +
     backHtml;
+  resolveImages($('content'));
 }
 $('content').addEventListener('click', e => {
   const a = e.target.closest('.wikilink[data-id], .lint-item[data-id]');

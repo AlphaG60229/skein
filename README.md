@@ -4,7 +4,7 @@
 
 *[繁體中文說明見下方](#skein-繁體中文)*
 
-Skein is one HTML file. Open it in a Chromium browser, point it at a folder, and it renders your `notes/*.md` — YAML frontmatter, `[[wikilinks]]` and all — as an interactive force-directed graph with faceted filtering, full-text search, inline editing, and a lint report for broken links. No install, no server, no account, no network.
+Skein is one HTML file. Open it in a Chromium browser, point it at a folder, and it renders your `notes/*.md` — YAML frontmatter, `[[wikilinks]]`, tables, blockquotes, code blocks with syntax highlighting, and local images — as an interactive force-directed graph with faceted filtering, full-text search, inline editing, and a lint report for broken links. No install, no server, no account, no network.
 
 The name is the metaphor: a skein is a loosely coiled length of yarn — many threads wound into one connected whole, which is what a linked set of notes becomes.
 
@@ -42,8 +42,17 @@ revision: 3          # optional — nudges the node size on the graph
 ---
 
 Body text. Link to other notes with [[another-note]].
-Supports # headings, **bold**, `inline code`, and - lists.
+Supports # headings, **bold**, *italic*, `inline code`, ordered and unordered
+lists, and > blockquotes.
 ```
+
+Beyond the frontmatter block, the body also supports fenced code blocks (triple
+backticks, with a language name for lightweight syntax highlighting), GFM-style
+pipe tables (a header row, a `---` separator row, then data rows), and local
+images with `![alt](relative/path.png)`. Images are resolved relative to
+`notes/` through the same File System Access handle used to read notes —
+nothing is fetched over the network, so a remote `https://` image URL will
+not load (this is enforced by the page's CSP, not just a missing feature).
 
 Edges on the graph come from two sources: the `related:` list and any `[[wikilink]]` in the body. The `type` field drives node color; the facet panel filters by `type`, `status`, `domain`, and `tags`.
 
@@ -73,7 +82,7 @@ Skein uses the [File System Access API](https://developer.mozilla.org/en-US/docs
 ## Known limitations
 
 - The YAML parser is minimal by design: scalars, `[a, b]` arrays, `- item` arrays, and one level of inline `{key: value}` objects. Nested mappings and multiline strings are not supported.
-- Markdown rendering covers headings, bold, inline code, lists, and wikilinks — it is a viewer, not a full CommonMark engine.
+- Markdown rendering covers headings, bold, italic, inline code, ordered/unordered lists, blockquotes, fenced code blocks with basic syntax highlighting, GFM-style tables, local images, and wikilinks — it is a viewer, not a full CommonMark engine (no footnotes, no nested lists, no HTML passthrough).
 - Notes are read from `notes/` only (not recursively).
 - Interface language is currently **English**.
 
@@ -127,8 +136,10 @@ revision: 3          # 選用——會微調節點在圖上的大小
 ---
 
 正文。用 [[another-note]] 連結到其他筆記。
-支援 # 標題、**粗體**、`行內程式碼`，以及 - 清單。
+支援 # 標題、**粗體**、*斜體*、`行內程式碼`、有序與無序清單，以及 > 引用區塊。
 ```
+
+除了 frontmatter 區塊外，正文還支援三個反引號的程式碼區塊（標語言名稱可套用簡易語法高亮）、GFM 風格的表格（表頭列、`---` 分隔列、資料列），以及用 `![alt](相對路徑.png)` 語法內嵌本機圖片。圖片會透過讀取筆記所用的同一組 File System Access handle，相對於 `notes/` 資料夾解析——完全不會發出網路請求，所以遠端 `https://` 圖片網址不會被載入（這是 CSP 強制規定，不只是沒做而已）。
 
 圖上的連線來自兩個來源：`related:` 清單，以及正文中的任何 `[[wikilink]]`。`type` 欄位決定節點顏色；左側分面面板可依 `type`、`status`、`domain`、`tags` 篩選。
 
@@ -158,7 +169,7 @@ Skein 使用 [File System Access API](https://developer.mozilla.org/en-US/docs/W
 ## 已知限制
 
 - YAML 解析器刻意保持精簡：純量、`[a, b]` 陣列、`- item` 陣列，以及一層行內 `{key: value}` 物件。不支援巢狀對應與多行字串。
-- Markdown 渲染涵蓋標題、粗體、行內程式碼、清單與 wikilink——它是檢視器，不是完整的 CommonMark 引擎。
+- Markdown 渲染涵蓋標題、粗體、斜體、行內程式碼、有序／無序清單、引用區塊、含簡易語法高亮的程式碼區塊、GFM 表格、本機圖片與 wikilink——它是檢視器，不是完整的 CommonMark 引擎（不支援註腳、巢狀清單、內嵌原生 HTML）。
 - 只讀取 `notes/` 下的筆記（不遞迴子資料夾）。
 - 介面語言目前為**英文**。
 
