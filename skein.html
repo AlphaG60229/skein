@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'">
+<title>Skein — local Markdown knowledge graph</title>
+<style>
+:root{
+  --bg:#eef0f2; --panel:#ffffff; --ink:#1c2430; --muted:#5f6b7a; --line:#d8dde3;
+  --accent:#b45309; --accent-soft:#fef3e2; --danger:#b91c1c;
+  --chip:#f1ede4; --chip-ink:#7c4a0b; --dot:#d3d8dd; --pre-bg:#f4f5f7; --pre-ink:#1c2430;
+  --shadow:0 8px 24px rgba(28,36,48,.10);
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
+  --left:250px; --right:430px;
+}
+[data-theme=dark]{
+  --bg:#101418; --panel:#161c22; --ink:#e5ebef; --muted:#8fa1ab; --line:#2a343d;
+  --accent:#fbbf24; --accent-soft:#2a2113; --danger:#f87171;
+  --chip:#26303a; --chip-ink:#fcd34d; --dot:#232c34; --pre-bg:#0d1114; --pre-ink:#dbe3e8;
+  --shadow:0 8px 24px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
+button,input,textarea{font-family:inherit;color:inherit}
+::selection{background:var(--accent-soft)}
+
+/* ---------- header ---------- */
+header{height:52px;display:flex;gap:8px;align-items:center;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:8px}
+.brand b{font-family:var(--mono);font-size:15px;letter-spacing:.04em}
+.brand b::first-letter{color:var(--accent)}
+#stats{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.grow{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel);padding:6px 11px;border-radius:8px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,input:focus-visible,textarea:focus-visible,.tab:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+[data-theme=dark] .btn.primary{color:#1c1508}
+.btn.small{padding:3px 8px;font-size:11.5px}
+input[type=search]{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:7px 13px;min-width:200px;font-size:12.5px}
+
+/* ---------- workspace menu ---------- */
+.menu-wrap{position:relative}
+.menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:8px;min-width:280px;z-index:40;display:none}
+.menu.show{display:block}
+.menu .hd{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);padding:4px 6px 8px}
+.ws-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer}
+.ws-row:hover{background:var(--accent-soft)}
+.ws-row.current{background:var(--accent-soft)}
+.ws-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.ws-time{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.ws-act{border:none;background:none;cursor:pointer;color:var(--muted);padding:2px 4px;border-radius:5px;font-size:12px}
+.ws-act:hover{color:var(--accent)}
+.ws-act.del:hover{color:var(--danger)}
+.menu hr{border:none;border-top:1px solid var(--line);margin:8px 0}
+.menu .wide{display:block;width:100%;text-align:left;margin:2px 0}
+
+/* ---------- layout ---------- */
+#app{height:calc(100vh - 52px);display:flex;min-width:0;min-height:0}
+.pane{background:var(--panel);overflow:auto}
+.resizer{width:6px;flex:0 0 6px;cursor:col-resize;border-left:1px solid var(--line);border-right:1px solid var(--line);touch-action:none}
+.resizer:hover{background:var(--accent-soft)}
+#left{width:var(--left);flex:0 0 var(--left);padding:12px;border-right:1px solid var(--line)}
+#right{width:var(--right);flex:0 0 var(--right);border-left:1px solid var(--line);display:flex;flex-direction:column}
+.collapsed-left #left,.collapsed-left #rzL{display:none}
+.collapsed-right #right,.collapsed-right #rzR{display:none}
+.section-title{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:16px 0 6px}
+.section-title:first-child{margin-top:2px}
+.facet{padding:5px 8px;border-radius:7px;display:flex;justify-content:space-between;gap:8px;cursor:pointer;font-size:13px}
+.facet:hover,.facet.active{background:var(--accent-soft);color:var(--chip-ink)}
+.count{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+
+/* ---------- graph canvas ---------- */
+#graphWrap{position:relative;overflow:hidden;flex:1 1 auto;min-width:280px;
+  background-color:var(--bg);
+  background-image:radial-gradient(var(--dot) 1px,transparent 1px);
+  background-size:22px 22px}
+svg{width:100%;height:100%;display:block;cursor:grab}
+svg.panning{cursor:grabbing}
+.toolbar{position:absolute;top:12px;right:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 24px);z-index:5}
+.zoomBox{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-family:var(--mono);font-size:11px}
+.zoomBox input{width:100px}
+.legend{position:absolute;left:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);font-size:12px;max-width:230px;display:none}
+.legend .hd{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:4px}
+.legend .row{margin:2px 0}
+
+.link{stroke:var(--line);stroke-width:1.4;opacity:.6;stroke-linecap:round}
+.link.hl{stroke:var(--accent);stroke-width:2.6;opacity:1}
+.node circle{stroke:var(--panel);stroke-width:2.4;cursor:pointer}
+.node text{font-size:11.5px;fill:var(--ink);font-weight:600;text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:var(--panel);stroke-width:3px}
+.node.dim{opacity:.15}
+.node.selected circle{stroke:var(--accent);stroke-width:3.5;filter:drop-shadow(0 0 14px var(--accent))}
+@media (prefers-reduced-motion:no-preference){
+  .node circle{transition:stroke .15s}
+}
+
+/* ---------- welcome ---------- */
+.welcome{padding:44px 32px;max-width:680px;margin:auto;color:var(--muted)}
+.welcome h2{color:var(--ink);font-family:var(--mono);letter-spacing:.02em}
+.welcome h2::first-letter{color:var(--accent)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0;box-shadow:var(--shadow);font-size:13.5px;line-height:1.6}
+.welcome .cta{display:flex;gap:8px;margin-top:14px}
+
+/* ---------- right panel ---------- */
+.tabs{display:flex;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tab{flex:1;text-align:center;padding:10px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;user-select:none}
+.tab.active{border-bottom-color:var(--accent);font-weight:700}
+.content{padding:16px 20px;overflow:auto;flex:1}
+.empty{padding:60px 20px;text-align:center;color:var(--muted)}
+.badge{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--chip-ink);margin:0 6px 6px 0}
+h2.title{font-size:18px;margin:6px 0}
+.filepath{font-family:var(--mono);font-size:11px;color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0}
+td{border-bottom:1px solid var(--line);padding:5px 8px;vertical-align:top}
+td:first-child{color:var(--muted);width:105px;font-family:var(--mono);font-size:11.5px}
+code{font-family:var(--mono);background:var(--chip);color:var(--chip-ink);padding:1px 5px;border-radius:4px;font-size:.92em}
+.body{line-height:1.7;font-size:14px}
+.body p{margin:6px 0}
+.body ul{margin:6px 0;padding-left:22px}
+.body h1{font-size:17px;margin:14px 0 4px}
+.body h2{font-size:15.5px;margin:12px 0 4px}
+.body h3{font-size:14px;margin:10px 0 4px}
+.body .gap{height:6px}
+pre.raw{white-space:pre-wrap;word-break:break-word;background:var(--pre-bg);color:var(--pre-ink);border:1px solid var(--line);border-radius:8px;padding:12px;font-family:var(--mono);font-size:12px}
+.wikilink{color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:5px;font-weight:600;cursor:pointer}
+.wikilink.broken{color:var(--danger);background:transparent;border:1px dashed var(--danger)}
+.back{margin-top:18px;border-top:1px solid var(--line);padding-top:10px}
+textarea#editArea{width:100%;height:calc(100% - 46px);min-height:220px;font-family:var(--mono);font-size:12.5px;line-height:1.6;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;resize:none}
+.editBar{display:flex;gap:8px;align-items:center;margin-top:8px}
+#saveMsg{font-size:12px;color:var(--muted)}
+#saveMsg.bad{color:var(--danger)}
+.lint-item{cursor:pointer}
+.lint-item:hover{border-color:var(--accent)}
+.lint-rule{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.err{position:fixed;top:0;left:0;right:0;background:var(--danger);color:#fff;padding:8px 14px;font:12px var(--mono);z-index:9999;display:none;white-space:pre-wrap;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="err" class="err" title="Click to dismiss"></div>
+
+<header>
+  <div class="brand"><b>Skein</b></div>
+  <span id="stats">no workspace</span>
+  <div class="grow"></div>
+  <input id="search" type="search" placeholder="Search notes  ( / )" aria-label="Search notes">
+  <button class="btn" id="btnResume" title="Reopen the workspace you used last">Resume last</button>
+  <div class="menu-wrap">
+    <button class="btn" id="btnWs">Workspaces ▾</button>
+    <div class="menu" id="wsMenu" role="menu">
+      <div class="hd">Saved workspaces</div>
+      <div id="wsList"></div>
+      <hr>
+      <button class="btn wide" id="btnOpenNew">Open another folder…</button>
+    </div>
+  </div>
+  <button class="btn primary" id="btnOpen">Open folder</button>
+  <button class="btn" id="btnNew">New note</button>
+  <button class="btn" id="btnTheme" title="Toggle light / dark theme">◐</button>
+</header>
+
+<div id="app">
+  <aside id="left" class="pane">
+    <div id="facets" style="display:none">
+      <div class="section-title">Type</div><div id="f-type"></div>
+      <div class="section-title">Status</div><div id="f-status"></div>
+      <div class="section-title">Domain</div><div id="f-domain"></div>
+      <div class="section-title">Tags</div><div id="f-tags"></div>
+      <button class="btn" id="btnClear" style="width:100%;margin-top:12px">Clear filters</button>
+      <div class="section-title">Workspace files</div><div id="rootFiles"></div>
+    </div>
+    <div id="sideHint" class="filepath">Open a folder to begin.</div>
+  </aside>
+  <div class="resizer" id="rzL" role="separator" aria-label="Resize left panel"></div>
+
+  <main id="graphWrap">
+    <svg id="graph" aria-label="Note graph"></svg>
+    <div class="toolbar">
+      <button class="btn small" id="btnLeft" title="Show / hide left panel">☰</button>
+      <button class="btn small" id="btnRight" title="Show / hide right panel">▤</button>
+      <button class="btn small" id="btnFull" title="Clear selection and show every note">Full</button>
+      <button class="btn small" id="btnFit" title="Zoom to fit visible notes">Fit</button>
+      <button class="btn small" id="btnFocus" title="Zoom to the selected note and its neighbors">Focus</button>
+      <button class="btn small" id="btnRelayout" title="Re-run the layout from a circle">Relayout</button>
+      <button class="btn small" id="btnPanels" title="Restore default panel sizes">⟲ Panels</button>
+      <span class="zoomBox">zoom <input id="zoomSlider" type="range" min="25" max="240" value="100" aria-label="Zoom"><span id="zoomLabel">100%</span></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="welcome" class="welcome">
+      <h2>Skein</h2>
+      <div class="card">A single-file, local-first viewer for a folder of Markdown notes.
+        It reads <code>notes/*.md</code>, parses YAML frontmatter, and draws the
+        <code>[[wikilinks]]</code> between notes as an interactive graph. Nothing ever leaves your machine.</div>
+      <div class="card">Your browser will ask for permission to read the folder — that prompt is the security
+        boundary, so a page can never scan your disk silently. Write access is only requested later,
+        the first time you save.</div>
+      <div class="card">Works in Chromium browsers (Chrome, Edge). Firefox and Safari do not support the
+        File System Access API yet.</div>
+      <div class="cta">
+        <button class="btn primary" id="btnOpen2">Open folder</button>
+        <button class="btn" id="btnResume2">Resume last workspace</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="resizer" id="rzR" role="separator" aria-label="Resize right panel"></div>
+  <aside id="right" class="pane">
+    <div class="tabs">
+      <div class="tab active" data-tab="view" tabindex="0">View</div>
+      <div class="tab" data-tab="edit" tabindex="0">Edit</div>
+      <div class="tab" data-tab="lint" tabindex="0">Lint</div>
+    </div>
+    <div class="content" id="content"><div class="empty">Select a node to view its note.</div></div>
+  </aside>
+</div>
+<script>
+'use strict';
+/* =====================================================================
+   Skein — single-file local Markdown knowledge graph
+   Sections: utils · prefs · workspace store · loading · parsing ·
+             markdown · graph · filters · view/edit/lint · wiring
+   ===================================================================== */
+
+/* ---------- utils ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => s == null ? '' : String(s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+window.onerror = (m, u, l) => {
+  const e = $('err'); e.style.display = 'block';
+  e.textContent = 'Error: ' + m + (l ? ' (line ' + l + ')' : '');
+};
+$('err').addEventListener('click', () => { $('err').style.display = 'none'; });
+
+const PALETTE = ['#b45309','#0e7490','#7c3aed','#15803d','#be123c',
+                 '#4338ca','#a16207','#0f766e','#9d174d','#475569'];
+function typeColor(t){
+  if (!t) return '#64748b';
+  let h = 0; for (let i = 0; i < t.length; i++){ h = ((h<<5)-h) + t.charCodeAt(i); h |= 0; }
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+
+/* ---------- preferences (persisted UI state) ---------- */
+const PREFS_KEY = 'filament-prefs';
+const prefs = { theme:'light', left:250, right:430, cLeft:false, cRight:false };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); } catch(e){}
+function savePrefs(){ try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch(e){} }
+function applyPrefs(){
+  document.body.setAttribute('data-theme', prefs.theme === 'dark' ? 'dark' : 'light');
+  document.documentElement.style.setProperty('--left',  Math.max(190, prefs.left)  + 'px');
+  document.documentElement.style.setProperty('--right', Math.max(190, prefs.right) + 'px');
+  $('app').classList.toggle('collapsed-left',  !!prefs.cLeft);
+  $('app').classList.toggle('collapsed-right', !!prefs.cRight);
+}
+applyPrefs();
+
+/* ---------- workspace store (IndexedDB) ---------- */
+function openDb(){
+  return new Promise(res => {
+    const r = indexedDB.open('filament-db', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('workspaces', { keyPath:'wid' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => res(null);
+  });
+}
+async function wsAll(){
+  const d = await openDb(); if (!d) return [];
+  return new Promise(res => {
+    const g = d.transaction('workspaces').objectStore('workspaces').getAll();
+    g.onsuccess = () => res(g.result || []); g.onerror = () => res([]);
+  });
+}
+async function wsPut(w){
+  const d = await openDb(); if (!d) return;
+  return new Promise(res => {
+    const t = d.transaction('workspaces','readwrite');
+    t.objectStore('workspaces').put(w); t.oncomplete = res; t.onerror = res;
+  });
+}
+async function wsDelete(wid){
+  const d = await openDb(); if (!d) return;
+  return new Promise(res => {
+    const t = d.transaction('workspaces','readwrite');
+    t.objectStore('workspaces').delete(wid); t.oncomplete = res; t.onerror = res;
+  });
+}
+async function ensurePerm(handle, mode){
+  try {
+    if (await handle.queryPermission({ mode }) === 'granted') return true;
+    return (await handle.requestPermission({ mode })) === 'granted';
+  } catch(e){ return false; }
+}
+
+/* ---------- current workspace state ---------- */
+let currentWs = null, rootHandle = null, notesHandle = null;
+let files = [], rootFiles = [];
+let selectedId = null;
+let filter = { type:null, status:null, domain:null, tags:{}, search:'' };
+let dirty = false;
+
+function toast(m){ $('stats').textContent = m; }
+
+async function openNewFolder(){
+  if (!window.showDirectoryPicker){
+    alert('This browser does not support the File System Access API.\nPlease use Chrome or Edge.'); return;
+  }
+  let h;
+  try { h = await showDirectoryPicker({ mode:'read' }); } catch(e){ return; /* user cancelled */ }
+  const all = await wsAll();
+  for (const w of all){
+    try { if (await h.isSameEntry(w.handle)){ w.ts = Date.now(); await wsPut(w); return activate(w); } } catch(e){}
+  }
+  let name = prompt('Name this workspace (shown in the workspace list):', h.name);
+  if (name === null) name = h.name;
+  name = (name || '').trim() || h.name;
+  const w = { wid:'w' + Date.now(), name, handle:h, ts:Date.now() };
+  await wsPut(w);
+  activate(w);
+}
+async function resumeLast(){
+  const all = await wsAll();
+  if (!all.length){ alert('No saved workspaces yet. Use "Open folder" first.'); return; }
+  all.sort((a,b) => b.ts - a.ts);
+  activate(all[0]);
+}
+async function activate(w){
+  const ok = await ensurePerm(w.handle, 'read');
+  if (!ok){ alert('Read permission was not granted for "' + w.name + '".'); return; }
+  w.ts = Date.now(); await wsPut(w);
+  currentWs = w; rootHandle = w.handle;
+  $('wsMenu').classList.remove('show');
+  loadWorkspace();
+}
+
+/* ---------- workspace menu ---------- */
+function fmtTime(ts){
+  const d = new Date(ts), p = n => String(n).padStart(2,'0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
+}
+async function renderWsMenu(){
+  const box = $('wsList'); box.innerHTML = '';
+  const all = (await wsAll()).sort((a,b) => b.ts - a.ts);
+  if (!all.length){
+    box.innerHTML = '<div class="ws-row" style="cursor:default;color:var(--muted)">Nothing saved yet.</div>';
+    return;
+  }
+  for (const w of all){
+    const row = document.createElement('div');
+    row.className = 'ws-row' + (currentWs && currentWs.wid === w.wid ? ' current' : '');
+    row.innerHTML =
+      '<span class="ws-name">' + esc(w.name) + '</span>' +
+      '<span class="ws-time">' + esc(fmtTime(w.ts)) + '</span>' +
+      '<button class="ws-act ren" title="Rename">✎</button>' +
+      '<button class="ws-act del" title="Forget this workspace">✕</button>';
+    row.querySelector('.ws-name').addEventListener('click', () => activate(w));
+    row.querySelector('.ren').addEventListener('click', async e => {
+      e.stopPropagation();
+      const n = prompt('Rename workspace:', w.name);
+      if (n && n.trim()){ w.name = n.trim(); await wsPut(w); renderWsMenu(); }
+    });
+    row.querySelector('.del').addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Forget "' + w.name + '"?\nOnly the saved shortcut is removed — the folder and its files are not touched.')) return;
+      await wsDelete(w.wid);
+      if (currentWs && currentWs.wid === w.wid) currentWs = null;
+      renderWsMenu();
+    });
+    box.appendChild(row);
+  }
+}
+
+/* ---------- loading ---------- */
+async function loadWorkspace(){
+  files = []; rootFiles = []; selectedId = null; dirty = false;
+  filter = { type:null, status:null, domain:null, tags:{}, search:'' };
+  $('search').value = '';
+  try {
+    notesHandle = await rootHandle.getDirectoryHandle('notes', { create:false });
+  } catch(e){
+    alert('This folder has no "notes/" subfolder.\nSkein expects:  <folder>/notes/*.md'); return;
+  }
+  for await (const entry of notesHandle.values()){
+    if (entry.kind !== 'file' || !/\.md$/i.test(entry.name)) continue;
+    const text = await (await entry.getFile()).text();
+    const p = splitFm(text);
+    const id = p.yaml.id || entry.name.replace(/\.md$/i,'');
+    files.push({
+      id, title: p.yaml.title || id,
+      type: p.yaml.type || 'unknown', status: p.yaml.status || 'draft',
+      yaml: p.yaml, body: p.body, raw: text, handle: entry, filename: entry.name
+    });
+  }
+  for await (const entry of rootHandle.values()){
+    if (entry.kind !== 'file' || !/\.md$/i.test(entry.name)) continue;
+    const text = await (await entry.getFile()).text();
+    rootFiles.push({ name: entry.name, text });
+  }
+  files.sort((a,b) => a.id.localeCompare(b.id));
+  rootFiles.sort((a,b) => a.name.localeCompare(b.name));
+
+  $('welcome').style.display = 'none';
+  $('facets').style.display = '';
+  $('sideHint').style.display = 'none';
+  $('legend').style.display = 'block';
+  $('content').innerHTML = '<div class="empty">Select a node to view its note.</div>';
+  toast(currentWs.name + ' · ' + files.length + ' notes' +
+        (rootFiles.length ? ' · ' + rootFiles.length + ' root files' : ''));
+  buildGraph(false);
+  renderFacets(); renderLegend(); renderRootFiles();
+  relayoutCircle(); fitAll();
+}
+
+/* ---------- YAML frontmatter parsing ---------- */
+function stripQ(s){
+  if (!s) return s; s = s.trim();
+  const a = s[0], b = s[s.length-1];
+  if ((a === '"' && b === '"') || (a === "'" && b === "'")) return s.slice(1,-1);
+  return s;
+}
+function parseInlineObj(t){
+  const o = {};
+  for (const part of t.split(',')){
+    const i = part.indexOf(':');
+    if (i > 0) o[part.slice(0,i).trim()] = stripQ(part.slice(i+1));
+  }
+  return o;
+}
+function parseYaml(txt){
+  const o = {}; let arr = null;
+  for (const line of txt.split(/\r?\n/)){
+    if (!line.trim() || line.trim()[0] === '#') continue;
+    const item = line.match(/^\s*-\s*(.+)$/);
+    if (item && arr){
+      const v = item[1].trim();
+      arr.push(v[0] === '{' && v[v.length-1] === '}' ? parseInlineObj(v.slice(1,-1)) : stripQ(v));
+      continue;
+    }
+    const kv = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    if (!kv) continue;
+    const k = kv[1], v = kv[2].trim();
+    if (v === ''){ arr = []; o[k] = arr; }
+    else if (v[0] === '[' && v[v.length-1] === ']'){
+      const inner = v.slice(1,-1).trim();
+      o[k] = inner ? inner.split(',').map(x => stripQ(x.trim())) : [];
+      arr = null;
+    } else { o[k] = stripQ(v); arr = null; }
+  }
+  return o;
+}
+function splitFm(t){
+  const m = t.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  return m ? { yaml: parseYaml(m[1]), body: m[2] } : { yaml:{}, body:t };
+}
+
+/* ---------- markdown rendering (escaped-first, minimal) ---------- */
+function decodeEntities(s){
+  return s.replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+          .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+}
+function inlineMd(s){
+  return s
+    .replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>')
+    .replace(/`([^`\n]+)`/g,'<code>$1</code>')
+    .replace(/\[\[([^\]]+)\]\]/g, (m0, id) => {
+      id = id.trim();
+      const exists = !!findNote(decodeEntities(id));
+      return '<a class="wikilink' + (exists ? '' : ' broken') + '" data-id="' + id + '" title="' +
+             (exists ? 'Open note' : 'No note with this id') + '">' + id + '</a>';
+    });
+}
+function mdRender(t){
+  const out = []; let inList = false;
+  for (const ln of esc(t || '').split(/\r?\n/)){
+    const li = ln.match(/^\s*-\s+(.+)$/);
+    if (li){ if (!inList){ out.push('<ul>'); inList = true; } out.push('<li>' + inlineMd(li[1]) + '</li>'); continue; }
+    if (inList){ out.push('</ul>'); inList = false; }
+    let m;
+    if ((m = ln.match(/^###\s+(.+)$/))){ out.push('<h3>' + inlineMd(m[1]) + '</h3>'); continue; }
+    if ((m = ln.match(/^##\s+(.+)$/))){ out.push('<h2>' + inlineMd(m[1]) + '</h2>'); continue; }
+    if ((m = ln.match(/^#\s+(.+)$/))){ out.push('<h1>' + inlineMd(m[1]) + '</h1>'); continue; }
+    if (!ln.trim()){ out.push('<div class="gap"></div>'); continue; }
+    out.push('<p>' + inlineMd(ln) + '</p>');
+  }
+  if (inList) out.push('</ul>');
+  return '<div class="body">' + out.join('') + '</div>';
+}
+function findNote(id){ return files.find(f => f.id === id) || null; }
+
+/* ---------- graph: world / view ---------- */
+const svg = $('graph'), wrap = $('graphWrap');
+let W = 800, H = 600, VW = 800, VH = 600;
+let viewCx = 0, viewCy = 0, viewZoom = 100;
+let nodes = {}, links = [], nodeEls = {}, linkEls = [];
+
+function calcWorld(){
+  VW = wrap.clientWidth || 800; VH = wrap.clientHeight || 600;
+  const n = Math.max(1, files.length), side = Math.ceil(Math.sqrt(n));
+  W = Math.max(VW, side * 190); H = Math.max(VH, side * 155);
+  if (!viewCx){ viewCx = W/2; viewCy = H/2; }
+}
+function applyView(){
+  calcWorld();
+  const z = Math.max(25, Math.min(240, viewZoom)) / 100;
+  const bw = VW / z, bh = VH / z;
+  svg.setAttribute('viewBox', (viewCx - bw/2) + ' ' + (viewCy - bh/2) + ' ' + bw + ' ' + bh);
+  $('zoomLabel').textContent = Math.round(viewZoom) + '%';
+  const sl = $('zoomSlider');
+  if (Number(sl.value) !== Math.round(viewZoom)) sl.value = Math.round(viewZoom);
+}
+function refreshSize(){ calcWorld(); applyView(); }
+function screenToWorld(cx, cy){
+  const r = svg.getBoundingClientRect();
+  const z = Math.max(25, Math.min(240, viewZoom)) / 100;
+  const bw = VW / z, bh = VH / z;
+  return { x: viewCx - bw/2 + (cx - r.left) / Math.max(1, r.width)  * bw,
+           y: viewCy - bh/2 + (cy - r.top)  / Math.max(1, r.height) * bh };
+}
+function clampAll(){
+  for (const id in nodes){
+    const n = nodes[id];
+    n.x = Math.max(48, Math.min(W-48, n.x));
+    n.y = Math.max(58, Math.min(H-58, n.y));
+  }
+}
+function visibleIds(){
+  const v = [];
+  for (const id in nodeEls) if (nodeEls[id].g.style.display !== 'none') v.push(id);
+  return v;
+}
+function fitToIds(ids){
+  if (!ids.length) return;
+  let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+  for (const id of ids){
+    const n = nodes[id]; if (!n) continue;
+    minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+    minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+  }
+  const pad = 130;
+  const bw = Math.max(220, maxX - minX + pad), bh = Math.max(220, maxY - minY + pad);
+  viewCx = (minX + maxX) / 2; viewCy = (minY + maxY) / 2;
+  viewZoom = Math.max(25, Math.min(200, Math.min(VW / bw, VH / bh) * 100));
+  applyView();
+}
+function fitAll(){ fitToIds(visibleIds()); }
+function focusSelection(){
+  if (!selectedId || !nodes[selectedId]) return;
+  const ids = [selectedId];
+  for (const l of links){
+    if (l.s.id === selectedId) ids.push(l.t.id);
+    if (l.t.id === selectedId) ids.push(l.s.id);
+  }
+  fitToIds(ids);
+}
+
+/* ---------- graph: build ---------- */
+function buildGraph(preserve){
+  refreshSize();
+  const old = preserve ? nodes : null;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const NS = 'http://www.w3.org/2000/svg';
+  const gL = document.createElementNS(NS,'g'), gN = document.createElementNS(NS,'g');
+  svg.appendChild(gL); svg.appendChild(gN);
+  nodes = {}; links = []; nodeEls = {}; linkEls = [];
+
+  for (const f of files){
+    if (nodes[f.id]) continue;                    // duplicate ids: first wins, lint reports it
+    const o = old && old[f.id];
+    nodes[f.id] = {
+      id: f.id, f,
+      x: o ? o.x : W/2 + Math.random()*160 - 80,
+      y: o ? o.y : H/2 + Math.random()*160 - 80,
+      vx: 0, vy: 0, pinned: false
+    };
+  }
+  const seen = {};
+  const addLink = (a, b) => {
+    if (!a || !b || a === b || !nodes[a] || !nodes[b]) return;
+    const key = a < b ? a+'|'+b : b+'|'+a;
+    if (seen[key]) return; seen[key] = 1;
+    links.push({ s: nodes[a], t: nodes[b] });
+  };
+  for (const f of files){
+    for (const r of (f.yaml.related || [])) addLink(f.id, typeof r === 'string' ? r : r.id);
+    const re = /\[\[([^\]]+)\]\]/g; let m;
+    while ((m = re.exec(f.body || ''))) addLink(f.id, m[1].trim());
+  }
+  for (const l of links){
+    const line = document.createElementNS(NS,'line');
+    line.setAttribute('class','link');
+    gL.appendChild(line); linkEls.push(line);
+  }
+  for (const id in nodes){
+    const n = nodes[id];
+    const g = document.createElementNS(NS,'g'); g.setAttribute('class','node');
+    const c = document.createElementNS(NS,'circle');
+    const rev = Number(n.f.yaml.revision) || 1;
+    const r = 11 + Math.min(16, rev * 1.4);
+    c.setAttribute('r', r); c.setAttribute('fill', typeColor(n.f.type));
+    const t = document.createElementNS(NS,'text');
+    t.setAttribute('dy', r + 13);
+    t.textContent = n.f.title.length > 16 ? n.f.title.slice(0,16) + '…' : n.f.title;
+    g.appendChild(c); g.appendChild(t); gN.appendChild(g);
+    nodeEls[id] = { g, c, t };
+    attachNodeDrag(g, n);
+  }
+  applyFilter();
+  wake();
+}
+
+/* ---------- graph: simulation with cooling ---------- */
+let simOn = false;
+function wake(){
+  if (document.visibilityState === 'hidden') return;
+  if (!simOn){ simOn = true; requestAnimationFrame(tick); }
+}
+function renderPositions(){
+  for (let i = 0; i < linkEls.length; i++){
+    const l = links[i];
+    linkEls[i].setAttribute('x1', l.s.x); linkEls[i].setAttribute('y1', l.s.y);
+    linkEls[i].setAttribute('x2', l.t.x); linkEls[i].setAttribute('y2', l.t.y);
+  }
+  for (const id in nodes){
+    const el = nodeEls[id];
+    if (el) el.g.setAttribute('transform','translate(' + nodes[id].x + ',' + nodes[id].y + ')');
+  }
+}
+function tick(){
+  if (!simOn) return;
+  const arr = Object.values(nodes);
+  for (let i = 0; i < arr.length; i++)
+    for (let j = i+1; j < arr.length; j++){
+      const a = arr[i], b = arr[j];
+      const dx = a.x-b.x, dy = a.y-b.y, d2 = dx*dx + dy*dy + .01, d = Math.sqrt(d2);
+      const F = 5200 / d2;
+      a.vx += F*dx/d; a.vy += F*dy/d; b.vx -= F*dx/d; b.vy -= F*dy/d;
+    }
+  for (const l of links){
+    const dx = l.t.x-l.s.x, dy = l.t.y-l.s.y, d = Math.sqrt(dx*dx+dy*dy) + .01;
+    const fs = (d - 145) * .018;
+    l.s.vx += fs*dx/d; l.s.vy += fs*dy/d; l.t.vx -= fs*dx/d; l.t.vy -= fs*dy/d;
+  }
+  let energy = 0;
+  for (const n of arr){
+    if (n.pinned){ n.vx = 0; n.vy = 0; energy += 1; continue; }  // keep sim alive while dragging
+    n.vx += (W/2 - n.x) * .002; n.vy += (H/2 - n.y) * .002;
+    n.vx *= .82; n.vy *= .82;
+    n.x += n.vx; n.y += n.vy;
+    energy += Math.abs(n.vx) + Math.abs(n.vy);
+  }
+  renderPositions();
+  if (energy < Math.max(.5, arr.length * .04)){ simOn = false; return; }
+  requestAnimationFrame(tick);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') simOn = false; else wake();
+});
+
+/* ---------- graph: node drag / pan / zoom ---------- */
+let dragging = null;
+function attachNodeDrag(g, n){
+  g.addEventListener('pointerdown', e => {
+    e.stopPropagation(); e.preventDefault();
+    dragging = { n, moved:false, sx:e.clientX, sy:e.clientY };
+    n.pinned = true;
+    g.setPointerCapture(e.pointerId);
+    wake();
+  });
+  g.addEventListener('pointermove', e => {
+    if (!dragging || dragging.n !== n) return;
+    if (Math.abs(e.clientX - dragging.sx) + Math.abs(e.clientY - dragging.sy) > 3) dragging.moved = true;
+    const w = screenToWorld(e.clientX, e.clientY);
+    n.x = Math.max(48, Math.min(W-48, w.x));
+    n.y = Math.max(58, Math.min(H-58, w.y));
+    renderPositions();
+  });
+  const done = e => {
+    if (!dragging || dragging.n !== n) return;
+    n.pinned = false;
+    if (!dragging.moved) select(n.id);
+    dragging = null;
+    wake();
+  };
+  g.addEventListener('pointerup', done);
+  g.addEventListener('pointercancel', done);
+}
+let panning = false, panX = 0, panY = 0;
+svg.addEventListener('pointerdown', e => {
+  if (e.target !== svg) return;
+  panning = true; panX = e.clientX; panY = e.clientY;
+  svg.classList.add('panning'); svg.setPointerCapture(e.pointerId); e.preventDefault();
+});
+svg.addEventListener('pointermove', e => {
+  if (!panning) return;
+  const z = Math.max(25, Math.min(240, viewZoom)) / 100;
+  viewCx -= (e.clientX - panX) / z; viewCy -= (e.clientY - panY) / z;
+  panX = e.clientX; panY = e.clientY;
+  applyView(); e.preventDefault();
+});
+const endPan = () => { panning = false; svg.classList.remove('panning'); };
+svg.addEventListener('pointerup', endPan);
+svg.addEventListener('pointercancel', endPan);
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const before = screenToWorld(e.clientX, e.clientY);
+  viewZoom = Math.max(25, Math.min(240, e.deltaY < 0 ? viewZoom*1.1 : viewZoom/1.1));
+  const r = svg.getBoundingClientRect(), z = viewZoom/100, bw = VW/z, bh = VH/z;
+  const relX = (e.clientX - r.left) / Math.max(1, r.width);
+  const relY = (e.clientY - r.top)  / Math.max(1, r.height);
+  viewCx = before.x - (relX - .5) * bw; viewCy = before.y - (relY - .5) * bh;
+  applyView();
+}, { passive:false });
+window.addEventListener('resize', () => { refreshSize(); clampAll(); renderPositions(); });
+
+function relayoutCircle(){
+  refreshSize();
+  const arr = Object.values(nodes);
+  const R = Math.max(120, Math.min(W, H) * .38);
+  arr.forEach((n, i) => {
+    const a = 2 * Math.PI * i / Math.max(1, arr.length);
+    n.x = W/2 + Math.cos(a)*R; n.y = H/2 + Math.sin(a)*R; n.vx = 0; n.vy = 0;
+  });
+  clearSelection(); clampAll(); renderPositions(); wake();
+}
+
+/* ---------- selection ---------- */
+function clearSelection(){
+  selectedId = null;
+  for (const id in nodeEls){ nodeEls[id].g.classList.remove('dim','selected'); }
+  for (const el of linkEls) el.classList.remove('hl');
+}
+function highlight(id){
+  const nb = { [id]: 1 };
+  for (const l of links){
+    if (l.s.id === id) nb[l.t.id] = 1;
+    if (l.t.id === id) nb[l.s.id] = 1;
+  }
+  for (const nid in nodeEls){
+    nodeEls[nid].g.classList.toggle('dim', !nb[nid]);
+    nodeEls[nid].g.classList.toggle('selected', nid === id);
+  }
+  linkEls.forEach((el, i) =>
+    el.classList.toggle('hl', links[i].s.id === id || links[i].t.id === id));
+}
+function select(id){
+  if (!guardDirty()) return;
+  if (!nodes[id] && !findNote(id)) return;
+  selectedId = id;
+  highlight(id);
+  switchTab('view');
+  viewNote(id);
+}
+
+/* ---------- facets & filtering ---------- */
+function facetCounts(getter){
+  const o = {};
+  for (const f of files){ const v = getter(f) || '(none)'; o[v] = (o[v]||0) + 1; }
+  return o;
+}
+function renderFacetBox(elId, counts, key, withDot){
+  const box = $(elId); box.innerHTML = '';
+  for (const k of Object.keys(counts).sort()){
+    const d = document.createElement('div');
+    const active = key === 'tags' ? !!filter.tags[k] : filter[key] === k;
+    d.className = 'facet' + (active ? ' active' : '');
+    d.innerHTML = '<span>' + (withDot ? '<span class="dot" style="background:' + typeColor(k) + '"></span>' : '') +
+                  esc(key === 'tags' ? '#' + k : k) + '</span><span class="count">' + counts[k] + '</span>';
+    d.addEventListener('click', () => {
+      if (key === 'tags'){ if (filter.tags[k]) delete filter.tags[k]; else filter.tags[k] = 1; }
+      else filter[key] = filter[key] === k ? null : k;
+      renderFacets(); applyFilter();
+    });
+    box.appendChild(d);
+  }
+}
+function renderFacets(){
+  renderFacetBox('f-type',   facetCounts(f => f.type), 'type', true);
+  renderFacetBox('f-status', facetCounts(f => f.status), 'status');
+  renderFacetBox('f-domain', facetCounts(f => f.yaml.domain), 'domain');
+  const tags = {};
+  for (const f of files) for (const t of (f.yaml.tags || [])) tags[t] = (tags[t]||0) + 1;
+  renderFacetBox('f-tags', tags, 'tags');
+}
+function applyFilter(){
+  const q = filter.search.toLowerCase();
+  const vis = {};
+  for (const f of files){
+    if (filter.type && f.type !== filter.type) continue;
+    if (filter.status && f.status !== filter.status) continue;
+    if (filter.domain && (f.yaml.domain || '(none)') !== filter.domain) continue;
+    let ok = true;
+    for (const t in filter.tags) if ((f.yaml.tags || []).indexOf(t) < 0) ok = false;
+    if (!ok) continue;
+    if (q && (f.id + ' ' + f.title + ' ' + f.body).toLowerCase().indexOf(q) < 0) continue;
+    vis[f.id] = 1;
+  }
+  for (const id in nodeEls) nodeEls[id].g.style.display = vis[id] ? '' : 'none';
+  linkEls.forEach((el, i) =>
+    el.style.display = (vis[links[i].s.id] && vis[links[i].t.id]) ? '' : 'none');
+}
+function renderLegend(){
+  const types = {};
+  for (const f of files) types[f.type] = 1;
+  let h = '<div class="hd">Type</div>';
+  for (const k of Object.keys(types).sort())
+    h += '<div class="row"><span class="dot" style="background:' + typeColor(k) + '"></span>' + esc(k) + '</div>';
+  $('legend').innerHTML = h;
+}
+function renderRootFiles(){
+  const box = $('rootFiles'); box.innerHTML = '';
+  if (!rootFiles.length){
+    box.innerHTML = '<div class="facet" style="cursor:default;color:var(--muted)">none</div>'; return;
+  }
+  for (const rf of rootFiles){
+    const d = document.createElement('div');
+    d.className = 'facet';
+    d.innerHTML = '<span>' + esc(rf.name) + '</span><span class="count">view</span>';
+    d.addEventListener('click', () => {
+      if (!guardDirty()) return;
+      clearSelection(); switchTab('view');
+      $('content').innerHTML = '<span class="badge">root file</span><h2 class="title">' + esc(rf.name) +
+        '</h2><pre class="raw">' + esc(rf.text) + '</pre>';
+    });
+    box.appendChild(d);
+  }
+}
+
+/* ---------- view tab ---------- */
+function backlinksOf(id){
+  const out = [];
+  for (const f of files){
+    if (f.id === id) continue;
+    let hit = (f.yaml.related || []).some(r => (typeof r === 'string' ? r : r.id) === id);
+    if (!hit){
+      const re = /\[\[([^\]]+)\]\]/g; let m;
+      while ((m = re.exec(f.body || ''))) if (m[1].trim() === id){ hit = true; break; }
+    }
+    if (hit) out.push(f);
+  }
+  return out;
+}
+function viewNote(id){
+  const f = findNote(id); if (!f) return;
+  let rows = '';
+  for (const k in f.yaml)
+    rows += '<tr><td>' + esc(k) + '</td><td><code>' + esc(JSON.stringify(f.yaml[k])) + '</code></td></tr>';
+  const back = backlinksOf(id);
+  let backHtml = '<div class="back"><div class="section-title">Linked from</div>';
+  backHtml += back.length
+    ? back.map(b => '<a class="wikilink" data-id="' + esc(b.id) + '">' + esc(b.title) + '</a> ').join('')
+    : '<span class="filepath">No other note links here yet.</span>';
+  backHtml += '</div>';
+  $('content').innerHTML =
+    '<span class="badge" style="background:' + typeColor(f.type) + '22;color:' + typeColor(f.type) + '">' + esc(f.type) + '</span>' +
+    '<span class="badge">' + esc(f.status) + '</span>' +
+    '<h2 class="title">' + esc(f.title) + '</h2>' +
+    '<div class="filepath">notes/' + esc(f.filename) + '</div>' +
+    '<div class="section-title">Frontmatter</div><table>' + rows + '</table>' +
+    '<div class="section-title">Body</div>' + mdRender(f.body) +
+    backHtml;
+}
+$('content').addEventListener('click', e => {
+  const a = e.target.closest('.wikilink[data-id], .lint-item[data-id]');
+  if (!a) return;
+  const id = a.getAttribute('data-id');
+  if (findNote(id)) select(id);
+});
+
+/* ---------- edit tab ---------- */
+function guardDirty(){
+  if (!dirty) return true;
+  const ok = confirm('You have unsaved changes. Discard them?');
+  if (ok) dirty = false;
+  return ok;
+}
+function openEditor(){
+  const f = findNote(selectedId);
+  if (!f){ $('content').innerHTML = '<div class="empty">Select a note first, then edit it here.</div>'; return; }
+  $('content').innerHTML =
+    '<textarea id="editArea" spellcheck="false" aria-label="Note source"></textarea>' +
+    '<div class="editBar"><button class="btn primary" id="btnSave">Save</button><span id="saveMsg"></span></div>';
+  const ta = $('editArea');
+  ta.value = f.raw;
+  ta.addEventListener('input', () => { dirty = true; msg(''); });
+  $('btnSave').addEventListener('click', () => saveNote(f, ta.value));
+}
+function msg(t, bad){
+  const el = $('saveMsg'); if (!el) return;
+  el.textContent = t; el.className = bad ? 'bad' : '';
+}
+async function saveNote(f, text){
+  msg('Saving…');
+  try {
+    let ok = await ensurePerm(f.handle, 'readwrite');
+    if (!ok) ok = await ensurePerm(rootHandle, 'readwrite');   // fallback: grant on the folder
+    if (!ok) throw new Error('write permission was not granted');
+    const w = await f.handle.createWritable();
+    await w.write(text); await w.close();
+    dirty = false;
+    applyEdit(f, text);
+    msg('Saved.');
+  } catch (err){
+    msg('Save failed: ' + err.message, true);
+  }
+}
+function applyEdit(f, text){
+  const p = splitFm(text);
+  f.raw = text; f.yaml = p.yaml; f.body = p.body;
+  f.id = p.yaml.id || f.filename.replace(/\.md$/i,'');
+  f.title = p.yaml.title || f.id;
+  f.type = p.yaml.type || 'unknown';
+  f.status = p.yaml.status || 'draft';
+  buildGraph(true);                       // in-memory rebuild; keeps positions, viewport, filters
+  renderFacets(); renderLegend();
+  toast(currentWs.name + ' · ' + files.length + ' notes' +
+        (rootFiles.length ? ' · ' + rootFiles.length + ' root files' : ''));
+  if (nodes[f.id]){ selectedId = f.id; highlight(f.id); }
+}
+
+/* ---------- new note ---------- */
+async function newNote(){
+  if (!notesHandle){ alert('Open a workspace first.'); return; }
+  if (!guardDirty()) return;
+  let name = prompt('File name for the new note (e.g. my-note.md):');
+  if (!name) return;
+  name = name.trim();
+  if (!/\.md$/i.test(name)) name += '.md';
+  if (/[\\/"'<>]/.test(name)){ alert('The file name contains characters that are not allowed.'); return; }
+  const id = name.replace(/\.md$/i,'');
+  if (findNote(id)){ alert('A note with id "' + id + '" already exists.'); return; }
+  try {
+    const ok = await ensurePerm(notesHandle, 'readwrite') || await ensurePerm(rootHandle, 'readwrite');
+    if (!ok) throw new Error('write permission was not granted');
+    const h = await notesHandle.getFileHandle(name, { create:true });
+    const tpl = '---\nid: ' + id + '\ntitle: ' + id + '\ntype: concept\nstatus: draft\ntags: []\nrelated: []\n---\n\n';
+    const w = await h.createWritable(); await w.write(tpl); await w.close();
+    const p = splitFm(tpl);
+    files.push({ id, title:id, type:'concept', status:'draft',
+                 yaml:p.yaml, body:p.body, raw:tpl, handle:h, filename:name });
+    files.sort((a,b) => a.id.localeCompare(b.id));
+    buildGraph(true); renderFacets(); renderLegend();
+    select(id); switchTab('edit'); openEditor();
+  } catch (err){
+    alert('Could not create the note: ' + err.message);
+  }
+}
+
+/* ---------- lint tab ---------- */
+function lintCard(rule, id, text){
+  return '<div class="card lint-item"' + (id ? ' data-id="' + esc(id) + '"' : '') + '>' +
+         '<div class="lint-rule">' + esc(rule) + '</div>' + text + '</div>';
+}
+function runLint(){
+  let h = '';
+  const byId = {};
+  for (const f of files){ (byId[f.id] = byId[f.id] || []).push(f); }
+
+  for (const id in byId)
+    if (byId[id].length > 1)
+      h += lintCard('duplicate id', id, '<b>' + esc(id) + '</b> is declared by ' +
+           byId[id].map(f => 'notes/' + esc(f.filename)).join(' and ') +
+           '. Only the first is shown on the graph.');
+
+  for (const f of files){
+    if (f.filename.toLowerCase() !== (f.id + '.md').toLowerCase())
+      h += lintCard('filename ≠ id', f.id, 'notes/' + esc(f.filename) +
+           ' declares <code>id: ' + esc(f.id) + '</code>. Rename one so they match.');
+    const re = /\[\[([^\]]+)\]\]/g; let m;
+    while ((m = re.exec(f.body || ''))){
+      const target = m[1].trim();
+      if (!findNote(target))
+        h += lintCard('broken link', f.id, '<b>' + esc(f.id) + '</b> links to <code>' +
+             esc(target) + '</code>, which does not exist. Click to open the source note.');
+    }
+    if (!f.yaml.type)
+      h += lintCard('missing field', f.id, '<b>' + esc(f.id) +
+           '</b> has no <code>type</code> — it falls back to <code>unknown</code>.');
+    if (!f.yaml.status)
+      h += lintCard('missing field', f.id, '<b>' + esc(f.id) +
+           '</b> has no <code>status</code> — it falls back to <code>draft</code>.');
+  }
+  const linked = {};
+  for (const l of links){ linked[l.s.id] = 1; linked[l.t.id] = 1; }
+  for (const f of files)
+    if (!linked[f.id])
+      h += lintCard('orphan', f.id, '<b>' + esc(f.id) +
+           '</b> has no links in or out. Connect it with <code>[[wikilinks]]</code> or <code>related:</code>.');
+
+  $('content').innerHTML =
+    '<div class="section-title">Lint report</div>' +
+    (h || '<div class="empty">No problems found.</div>');
+}
+
+/* ---------- tabs ---------- */
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.getAttribute('data-tab') === name));
+}
+document.querySelectorAll('.tab').forEach(t => {
+  const go = () => {
+    const name = t.getAttribute('data-tab');
+    if (name !== 'edit' && !guardDirty()) return;
+    switchTab(name);
+    if (name === 'view'){
+      if (selectedId && findNote(selectedId)) viewNote(selectedId);
+      else $('content').innerHTML = '<div class="empty">Select a node to view its note.</div>';
+    }
+    if (name === 'edit') openEditor();
+    if (name === 'lint') runLint();
+  };
+  t.addEventListener('click', go);
+  t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') go(); });
+});
+
+/* ---------- panel resizers (independent pointer handlers) ---------- */
+function makeResizer(el, side){
+  let active = false, startX = 0, orig = 0;
+  el.addEventListener('pointerdown', e => {
+    active = true; startX = e.clientX; orig = prefs[side];
+    el.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => {
+    if (!active) return;
+    let d = e.clientX - startX;
+    if (side === 'right') d = -d;
+    const v = Math.max(190, Math.min(window.innerWidth - 420, orig + d));
+    prefs[side] = v;
+    document.documentElement.style.setProperty('--' + side, v + 'px');
+  });
+  const done = () => {
+    if (!active) return;
+    active = false; savePrefs(); refreshSize(); clampAll(); renderPositions();
+  };
+  el.addEventListener('pointerup', done);
+  el.addEventListener('pointercancel', done);
+}
+makeResizer($('rzL'), 'left');
+makeResizer($('rzR'), 'right');
+
+/* ---------- header & toolbar wiring ---------- */
+$('btnOpen').addEventListener('click', openNewFolder);
+$('btnOpen2').addEventListener('click', openNewFolder);
+$('btnResume').addEventListener('click', resumeLast);
+$('btnResume2').addEventListener('click', resumeLast);
+$('btnNew').addEventListener('click', newNote);
+$('btnWs').addEventListener('click', async e => {
+  e.stopPropagation();
+  await renderWsMenu();
+  $('wsMenu').classList.toggle('show');
+});
+document.addEventListener('click', e => {
+  const m = $('wsMenu');
+  if (m.classList.contains('show') && !m.contains(e.target) && e.target !== $('btnWs'))
+    m.classList.remove('show');
+});
+$('btnTheme').addEventListener('click', () => {
+  prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
+  savePrefs(); applyPrefs();
+});
+$('btnClear').addEventListener('click', () => {
+  filter = { type:null, status:null, domain:null, tags:{}, search:'' };
+  $('search').value = '';
+  renderFacets(); applyFilter();
+});
+let searchTimer = null;
+$('search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { filter.search = e.target.value; applyFilter(); }, 150);
+});
+$('btnFull').addEventListener('click', () => { clearSelection(); fitAll(); });
+$('btnFit').addEventListener('click', fitAll);
+$('btnFocus').addEventListener('click', focusSelection);
+$('btnRelayout').addEventListener('click', relayoutCircle);
+$('btnLeft').addEventListener('click', () => {
+  prefs.cLeft = !prefs.cLeft; savePrefs(); applyPrefs();
+  setTimeout(() => { refreshSize(); clampAll(); renderPositions(); }, 60);
+});
+$('btnRight').addEventListener('click', () => {
+  prefs.cRight = !prefs.cRight; savePrefs(); applyPrefs();
+  setTimeout(() => { refreshSize(); clampAll(); renderPositions(); }, 60);
+});
+$('btnPanels').addEventListener('click', () => {
+  prefs.left = 250; prefs.right = 430; prefs.cLeft = false; prefs.cRight = false;
+  savePrefs(); applyPrefs();
+  setTimeout(() => { refreshSize(); clampAll(); renderPositions(); fitAll(); }, 80);
+});
+$('zoomSlider').addEventListener('input', function(){
+  viewZoom = Number(this.value) || 100; applyView();
+});
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing){ e.preventDefault(); $('search').focus(); }
+  if (e.key === 'Escape' && !typing){ clearSelection(); }
+});
+refreshSize();
+</script>
+</body>
+</html>
